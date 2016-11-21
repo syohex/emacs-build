@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+while getopts fh OPT
+do
+    case $OPT in
+        "f") FLAG_FORCE="TRUE" ;;
+        "h") FLAG_HELP="TRUE" ;;
+        * ) FLAG_HELP="TRUE" ;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+TARGET_VERSION="$1"
+LOCATION="$2"
+CONFIGURE_OPTIONS=${@:4}
+
+if [[ "$(uname)" == 'Linux' ]]; then
+    UBUNTU_VERSION=$(lsb_release -r | awk '{print $2}')
+    if [[ "$UBUNTU_VERSION" == "16.10" ]]; then
+        CONFIGURE_OPTIONS="CFLAGS=-g3 -no-pie $CONFIGURE_OPTIONS"
+    fi
+fi
+
+if [ "x"$FLAG_HELP != "x" -o "x$LOCATION" = "x" ]; then
+    echo "[usage] emacs-build [-f] VERSION LOCATION [-- CONFIGURE_OPTIONS]"
+    echo "  example: emacs-build 25.1 ~/local/emacs-25.1"
+    exit 0
+fi
+
+cd $(dirname $0)
+
+if [ "x"$FLAG_FORCE = "x" -a -d "$LOCATION" -a -x "$LOCATION/bin/emacs" ]; then
+    check=$("$LOCATION"/bin/emacs --version | grep "GNU Emacs" | grep "$TARGET_VERSION")
+    if [ "x$check" != "x" ]; then
+        echo "emacs $TARGET_VERSION already installed on $LOCATION"
+        echo "To do force re-install, use '-f' option"
+        exit 0
+    fi
+fi
+
+echo "Start to build emacs $TARGET_VERSION ..."
+(curl -L "http://ftp.gnu.org/gnu/emacs/emacs-${TARGET_VERSION}.tar.xz" | tar Jxf - \
+ && cd emacs-${TARGET_VERSION} \
+ && ./configure --prefix=$LOCATION "$CONFIGURE_OPTIONS" \
+ && make && make install) > /tmp/$USER-emacs-build.log
+
+if [[ $? -ne 0 ]]; then
+    echo "emacs-build failed. see log: /tmp/$USER-emacs-build.log"
+    exit 1
+fi
+
+rm -rf "emacs-${TARGET_VERSION}"
+
+echo "emacs $TARGET_VERSION successfully installed on $LOCATION"
+echo "To use this emacs, do 'export PATH=$LOCATION/bin:\$PATH'."
